@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#F3F5F8">
+  <title>SRK Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1 class="brand">SRK Studio</h1>
+    <button class="icon-btn" id="btn-settings" aria-label="Settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm8.4-2.1-1.9-.4a6.9 6.9 0 0 1-.7 1.7l1.1 1.6-1.6 1.6-1.6-1.1c-.5.3-1.1.6-1.7.7l-.4 1.9h-2.2l-.4-1.9a6.9 6.9 0 0 1-1.7-.7l-1.6 1.1-1.6-1.6 1.1-1.6a6.9 6.9 0 0 1-.7-1.7l-1.9-.4v-2.2l1.9-.4c.2-.6.4-1.2.7-1.7L5.6 6.8l1.6-1.6 1.6 1.1c.5-.3 1.1-.6 1.7-.7l.4-1.9h2.2l.4 1.9c.6.2 1.2.4 1.7.7l1.6-1.1 1.6 1.6-1.1 1.6c.3.5.6 1.1.7 1.7l1.9.4v2.2Z"/></svg>
+    </button>
+  </header>
+
+  <main>
+    <section class="composer" aria-label="Create">
+      <div class="mode" role="tablist" aria-label="What to make">
+        <button role="tab" id="tab-image" aria-selected="true" data-mode="image">Image</button>
+        <button role="tab" id="tab-video" aria-selected="false" data-mode="video">Video</button>
+      </div>
+
+      <label class="prompt-wrap" for="prompt">
+        <span class="sr-only">Describe what you want</span>
+        <textarea id="prompt" rows="4" placeholder="A lighthouse on a cliff at dawn, mist over the sea, soft golden light"></textarea>
+      </label>
+
+      <div id="start-frame" class="start-frame hidden">
+        <img id="start-frame-img" alt="Starting picture for the video">
+        <span>Starts from this picture</span>
+        <button class="link" id="btn-clear-start">Remove</button>
+      </div>
+
+      <div class="options">
+        <div class="opt">
+          <span class="opt-label" id="lbl-ratio">Shape</span>
+          <div class="chips" id="ratios" role="radiogroup" aria-labelledby="lbl-ratio"></div>
+        </div>
+        <div class="opt-row">
+          <label class="opt grow">
+            <span class="opt-label">Model</span>
+            <select id="model"></select>
+          </label>
+          <label class="opt" id="count-wrap">
+            <span class="opt-label">How many</span>
+            <select id="count"><option>1</option><option>2</option><option>3</option><option>4</option></select>
+          </label>
+          <label class="opt hidden" id="duration-wrap">
+            <span class="opt-label">Seconds</span>
+            <select id="duration"></select>
+          </label>
+        </div>
+        <div class="opt-row toggles">
+          <label class="toggle" id="enhance-wrap"><input type="checkbox" id="enhance" checked> <span>Improve my prompt</span></label>
+          <label class="toggle hidden" id="audio-wrap"><input type="checkbox" id="audio"> <span>With sound</span></label>
+        </div>
+      </div>
+
+      <p class="note" id="mode-note"></p>
+      <button class="create" id="btn-create">Create</button>
+    </section>
+
+    <section class="stage hidden" id="stage" aria-live="polite">
+      <div class="frame" id="frame">
+        <div class="develop" id="develop"></div>
+        <div class="stage-media" id="stage-media"></div>
+      </div>
+      <div class="stage-bar">
+        <span id="stage-status">Creating…</span>
+        <button class="link" id="btn-cancel">Cancel</button>
+      </div>
+    </section>
+
+    <section class="gallery" aria-labelledby="gal-title">
+      <div class="gal-head">
+        <h2 id="gal-title">Your work</h2>
+        <span class="muted" id="gal-count"></span>
+      </div>
+      <div class="grid" id="grid"></div>
+      <p class="empty" id="empty">Nothing here yet. Describe a picture above and press Create — it appears here and stays on this phone.</p>
+    </section>
+  </main>
+
+  <div class="sheet hidden" id="viewer" role="dialog" aria-modal="true" aria-label="Picture">
+    <div class="sheet-body">
+      <div class="viewer-media" id="viewer-media"></div>
+      <p class="viewer-prompt" id="viewer-prompt"></p>
+      <p class="muted small" id="viewer-meta"></p>
+      <div class="actions">
+        <button class="btn primary" id="v-save">Save to phone</button>
+        <button class="btn" id="v-share">Share</button>
+        <button class="btn" id="v-reuse">Use this prompt</button>
+        <button class="btn" id="v-animate">Make it a video</button>
+        <button class="btn danger" id="v-delete">Delete</button>
+      </div>
+      <button class="link close" id="v-close">Close</button>
+    </div>
+  </div>
+
+  <div class="sheet hidden" id="settings" role="dialog" aria-modal="true" aria-labelledby="set-title">
+    <div class="sheet-body">
+      <h2 id="set-title">Settings</h2>
+      <p>Pictures are free and need nothing set up.</p>
+      <label class="field">
+        <span>Pollinations key (optional)</span>
+        <input id="s-key" type="password" autocomplete="off" placeholder="sk_…">
+      </label>
+      <p class="muted small">Adds premium picture models and makes video possible. Get a key at <b>enter.pollinations.ai</b>: sign in, then create a key. New accounts get a small free daily allowance; after that you pay for what you make. Your key stays on this phone and is sent only to Pollinations.</p>
+      <div class="actions">
+        <button class="btn primary" id="s-save">Save</button>
+        <button class="btn" id="s-close">Close</button>
+      </div>
+      <p class="muted small" id="s-result"></p>
+    </div>
+  </div>
+
+  <div class="toast hidden" id="toast" role="status"></div>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+name: Build SRK Studio APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Create Android project
+        run: |
+          npx cap add android
+          npx capacitor-assets generate --android --assetPath assets \
+            --iconBackgroundColor '#3A3FD6' --iconBackgroundColorDark '#3A3FD6' \
+            --splashBackgroundColor '#F3F5F8' --splashBackgroundColorDark '#16202C'
+          npx cap sync android
+
+      - name: Use the fixed SRK Studio signing key (so updates install over the old app)
+        run: node scripts/signing.js
+
+      - name: Build APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk ../SRK-Studio.apk
+
+      - name: Check the APK is signed with the SRK Studio key
+        run: |
+          keytool -printcert -jarfile SRK-Studio.apk | grep -m1 "SHA256:" | tee cert.txt
+          grep -q "$(keytool -list -v -keystore signing/debug.keystore -storepass android | grep -m1 'SHA256:' | sed 's/.*SHA256: //')" cert.txt
+
+      - name: Publish to Releases (latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: SRK Studio v1.0.${{ github.run_number }}
+          body: |
+            **SRK-Studio.apk** — make pictures (free, no sign-up) and short videos (with your own Pollinations key).
+
+            Open the APK on your Android phone to install or update.
+            (Allow "Install unknown apps" for your browser or Files app if asked.)
+          files: SRK-Studio.apk
+          make_latest: true
