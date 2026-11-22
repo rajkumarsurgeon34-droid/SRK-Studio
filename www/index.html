@@ -105,9 +105,20 @@
   <div class="sheet hidden" id="settings" role="dialog" aria-modal="true" aria-labelledby="set-title">
     <div class="sheet-body">
       <h2 id="set-title">Settings</h2>
-      <p>Pictures are free and need nothing set up.</p>
+      <h3 class="set-sub">Free daily pictures (Cloudflare)</h3>
       <label class="field">
-        <span>Pollinations key (optional)</span>
+        <span>Cloudflare account ID</span>
+        <input id="s-cf-account" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="32 letters and numbers">
+      </label>
+      <label class="field">
+        <span>Cloudflare API token</span>
+        <input id="s-cf-token" type="password" autocomplete="off" placeholder="Token with Workers AI permission">
+      </label>
+      <p class="muted small">On dash.cloudflare.com: Profile → API Tokens → Create token → use the <b>Workers AI</b> template. Your account ID is on any dashboard page. The free allowance is enough for many pictures a day and resets at 5:30 AM India time.</p>
+      <h3 class="set-sub">Premium pictures and video (Pollinations)</h3>
+      <p class="muted small">Without any key, Pollinations gives only a few free pictures an hour.</p>
+      <label class="field">
+        <span>Pollinations key</span>
         <input id="s-key" type="password" autocomplete="off" placeholder="sk_…">
       </label>
       <p class="muted small">Adds premium picture models and makes video possible. Get a key at <b>enter.pollinations.ai</b>: sign in, then create a key. New accounts get a small free daily allowance; after that you pay for what you make. Your key stays on this phone and is sent only to Pollinations.</p>

@@ -3,7 +3,10 @@
 Make pictures and short videos from a prompt, on your Android phone. Part of the SRK family by
 Dr. M. Rajkumar · ShazVerse Technologies.
 
-- **Pictures, free:** no account and no key. Pick a shape (square, wide, tall…), a model and up to 4 at once.
+- **Free daily pictures (Cloudflare):** add your Cloudflare account ID and a token made with the *Workers AI*
+  template in ⚙️ Settings. FLUX.1 Schnell (square) and SDXL Lightning (any shape) run on Cloudflare's free daily
+  allowance, which resets at 5:30 AM India time.
+- **A few pictures with no setup:** Pollinations' no-key pictures, limited to a few an hour.
 - **Premium pictures and video:** add your own Pollinations key in ⚙️ Settings (get one at
   [enter.pollinations.ai](https://enter.pollinations.ai)). New accounts get a small free daily allowance;
   after that you pay Pollinations for what you make. Video models include Veo, Seedance and Wan.
@@ -19,6 +22,7 @@ Each new build installs over the previous one.
 ## How it's built
 
 A plain HTML/CSS/JavaScript app in `www/`, wrapped as an Android app with Capacitor. GitHub Actions
-builds and publishes the APK on every push to `main`. Pictures and videos are made by
+builds and publishes the APK on every push to `main`. Cloudflare Workers AI is called through Android's native
+HTTP layer (its API doesn't accept requests from web pages). Other pictures and videos are made by
 [Pollinations](https://pollinations.ai): free pictures through `image.pollinations.ai`, and everything that
 needs a key through `gen.pollinations.ai`. Your key is stored only on your phone and sent only to Pollinations.

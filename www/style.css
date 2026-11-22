@@ -131,6 +131,7 @@ select, .field input {
 .sheet h2 { margin: 4px 0 8px; font-size: 1.375rem; letter-spacing: -0.02em; }
 .viewer-media img, .viewer-media video { display: block; width: 100%; max-height: 62vh; object-fit: contain; background: var(--table); border-radius: 6px; }
 .viewer-prompt { font-size: 1.0625rem; line-height: 1.5; margin: 12px 0 4px; }
+.set-sub { font-size: 1.0625rem; margin: 18px 0 2px; letter-spacing: -0.01em; }
 .field { display: grid; gap: 6px; margin: 14px 0 8px; }
 .field span { font-weight: 600; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }

@@ -6,6 +6,12 @@
   "use strict";
   const FREE_BASE = "https://image.pollinations.ai";
   const GEN_BASE = "https://gen.pollinations.ai";
+  const CF_BASE = "https://api.cloudflare.com/client/v4/accounts";
+  /** Cloudflare Workers AI picture models on the free daily allowance (10,000 neurons, resets 00:00 UTC). */
+  const CF_MODELS = [
+    { id: "flux-1-schnell", path: "@cf/black-forest-labs/flux-1-schnell", label: "FLUX.1 Schnell — square only", squareOnly: true },
+    { id: "sdxl-lightning", path: "@cf/bytedance/stable-diffusion-xl-lightning", label: "SDXL Lightning — any shape", squareOnly: false },
+  ];
   const $ = (id) => document.getElementById(id);
 
   const RATIOS = [
@@ -24,6 +30,8 @@
     mode: "image",
     ratio: "1:1",
     key: localStore("srkstudio.key") || "",
+    cfAccount: localStore("srkstudio.cfAccount") || "",
+    cfToken: localStore("srkstudio.cfToken") || "",
     freeModels: FREE_FALLBACK.slice(),
     premiumImages: [],
     videos: [],
@@ -128,7 +136,7 @@
       b.setAttribute("aria-checked", String(r.id === state.ratio));
       const scale = 16 / Math.max(r.w, r.h);
       b.innerHTML = `<i style="width:${Math.round(r.w * scale)}px;height:${Math.round(r.h * scale)}px"></i>${r.id}`;
-      b.onclick = () => { state.ratio = r.id; renderRatios(); };
+      b.onclick = () => { state.ratio = r.id; renderRatios(); renderNote(); };
       box.appendChild(b);
     }
   }
@@ -143,6 +151,12 @@
       (group || sel).appendChild(o);
     };
     if (state.mode === "image") {
+      if (hasCloudflare()) {
+        const cf = document.createElement("optgroup");
+        cf.label = "Cloudflare (free daily)";
+        CF_MODELS.forEach((m) => add(`cf:${m.id}`, m.label, cf));
+        sel.appendChild(cf);
+      }
       const free = document.createElement("optgroup");
       free.label = "Free";
       state.freeModels.forEach((id) => add(`free:${id}`, id, free));
@@ -158,7 +172,10 @@
     }
     if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
     renderDurations();
+    renderNote();
   }
+  const hasCloudflare = () => Boolean(state.cfAccount && state.cfToken);
+  const cfModel = (id) => CF_MODELS.find((m) => m.id === id);
 
   function renderDurations() {
     const sel = $("duration");
@@ -198,7 +215,11 @@
       note.textContent = "Video needs your own Pollinations key. Add it in Settings — new accounts get a small free daily allowance.";
       create.textContent = "Add a key to make videos";
     } else {
-      note.textContent = state.mode === "video" ? "A video takes one to a few minutes. Keep the app open while it's made." : "";
+      const picked = $("model").value;
+      const square = picked.startsWith("cf:") && cfModel(picked.slice(3))?.squareOnly;
+      note.textContent = state.mode === "video" ? "A video takes one to a few minutes. Keep the app open while it's made."
+        : square && state.ratio !== "1:1" ? "FLUX.1 Schnell makes square pictures. Pick SDXL Lightning for other shapes."
+        : picked.startsWith("free:") && !hasCloudflare() ? "Without a key, Pollinations allows only a few pictures an hour. Add Cloudflare in Settings for many free pictures a day." : "";
       create.textContent = state.mode === "video" ? "Create video" : "Create";
     }
   }
@@ -212,10 +233,11 @@
     return `${FREE_BASE}/prompt/${encodeURIComponent(prompt)}?${q}`;
   }
 
-  async function explain(res) {
+  async function explain(res, auth = true) {
     let detail = "";
     try { const t = await res.text(); try { const j = JSON.parse(t); detail = j.error?.message || j.message || j.error || ""; } catch { detail = t.slice(0, 160); } } catch { /* no body */ }
     if (res.status === 401 || res.status === 403) return "Your Pollinations key wasn't accepted. Check it in Settings.";
+    if (res.status === 402 && !auth) return "The free no-key pictures are used up for now. Add Cloudflare in Settings for many free pictures a day, or try again in an hour.";
     if (res.status === 402) return "Your Pollinations balance is used up. Wait for tomorrow's free allowance or add credit at enter.pollinations.ai.";
     if (res.status === 429) return "Too many requests right now. Wait a minute and try again.";
     if (res.status >= 500) return "Pollinations is busy or having a problem. Try again in a moment.";
@@ -230,7 +252,7 @@
       if (e.name === "AbortError") throw e;
       throw new Error("Couldn't reach Pollinations. Check your internet connection.");
     }
-    if (!res.ok) throw new Error(await explain(res));
+    if (!res.ok) { const err = new Error(await explain(res, auth)); err.status = res.status; throw err; }
     const blob = await res.blob();
     if (!/^(image|video)\//.test(blob.type) && blob.size < 2048) throw new Error("Pollinations sent back something that isn't a picture or video. Try again.");
     return blob;
@@ -284,14 +306,19 @@
         const made = [];
         for (let i = 0; i < count; i++) {
           const seed = randomSeed();
-          let blob, sourceUrl = null, usedModel = model;
-          if (kind === "free") {
+          let blob, sourceUrl = null, usedModel = model, usedRatio = state.ratio;
+          if (kind === "cf") {
+            const m = cfModel(model);
+            const size = m.squareOnly ? ratioOf("1:1") : r;
+            blob = await cloudflareImage(m, prompt, size, seed, ctrl.signal);
+            usedRatio = m.squareOnly ? "1:1" : state.ratio;
+          } else if (kind === "free") {
             sourceUrl = freeImageUrl(prompt, model, r, seed, enhance);
             try {
               blob = await fetchMedia(sourceUrl, { auth: false, signal: ctrl.signal });
             } catch (e) {
               const backup = FREE_FALLBACK.find((id) => id !== model && state.freeModels.includes(id)) || (model !== "flux" ? "flux" : null);
-              if (e.name === "AbortError" || !backup) throw e;
+              if (e.name === "AbortError" || !backup || e.status === 402 || e.status === 429) throw e;
               $("stage-status").textContent = `${model} isn't working right now, trying ${backup}…`;
               sourceUrl = freeImageUrl(prompt, backup, r, seed, enhance);
               blob = await fetchMedia(sourceUrl, { auth: false, signal: ctrl.signal });
@@ -301,7 +328,7 @@
             const q = new URLSearchParams({ model, width: r.w, height: r.h, seed });
             blob = await fetchMedia(`${GEN_BASE}/image/${encodeURIComponent(prompt)}?${q}`, { auth: true, signal: ctrl.signal });
           }
-          const item = { id: crypto.randomUUID(), kind: "image", prompt, model: usedModel, ratio: state.ratio, created: Date.now(), blob, sourceUrl };
+          const item = { id: crypto.randomUUID(), kind: "image", prompt, model: usedModel, ratio: usedRatio, created: Date.now(), blob, sourceUrl };
           await putItem(item);
           made.push(item);
           showOnStage(made);
@@ -319,6 +346,60 @@
       state.busy = null;
       $("btn-create").disabled = false;
     }
+  }
+
+  // ---------- Cloudflare Workers AI ----------
+  const b64ToBlob = (b64, type) => {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type });
+  };
+  function cloudflareProblem(status, body) {
+    let detail = "", code = 0;
+    try { const j = typeof body === "string" ? JSON.parse(body) : body; const e = (j && j.errors && j.errors[0]) || {}; detail = e.message || ""; code = e.code || 0; } catch { /* not JSON */ }
+    if (status === 401 || status === 403 || code === 10000) return "Cloudflare didn't accept your token. In Settings, check the account ID and that the token has Workers AI permission.";
+    if (status === 429 || code === 3036 || /neuron|daily|allocation|limit/i.test(detail)) return "Today's free Cloudflare allowance is used up. It resets at 5:30 AM India time.";
+    if (status === 404) return "Cloudflare couldn't find that account or model. Check the account ID in Settings.";
+    if (status >= 500) return "Cloudflare is having a problem. Try again in a moment.";
+    return `Cloudflare said no (${status})${detail ? ": " + String(detail).slice(0, 140) : "."}`;
+  }
+  /** Calls a Workers AI model. Inside the Android app the request goes through the native HTTP layer, because
+   * api.cloudflare.com does not allow requests from a web page (no CORS). */
+  async function cloudflareImage(m, prompt, size, seed, signal) {
+    const url = `${CF_BASE}/${encodeURIComponent(state.cfAccount)}/ai/run/${m.path}`;
+    const body = m.squareOnly ? { prompt, steps: 4, seed } : { prompt, width: size.w, height: size.h, seed };
+    const headers = { Authorization: `Bearer ${state.cfToken}`, "Content-Type": "application/json" };
+    const binary = !m.squareOnly; // FLUX answers JSON with a base64 image; SDXL answers with the PNG itself
+    const native = plugins().CapacitorHttp;
+    if (signal.aborted) throw aborted();
+    let status, data, type;
+    if (native) {
+      let res;
+      try { res = await native.request({ url, method: "POST", headers, data: body, responseType: binary ? "blob" : "json", connectTimeout: 30000, readTimeout: 120000 }); }
+      catch { throw new Error("Couldn't reach Cloudflare. Check your internet connection."); }
+      if (signal.aborted) throw aborted();
+      status = res.status; data = res.data;
+      type = (res.headers && (res.headers["Content-Type"] || res.headers["content-type"])) || "";
+      if (status < 200 || status >= 300) {
+        let text = data;
+        if (binary && typeof data === "string") { try { text = atob(data); } catch { /* leave as is */ } }
+        throw new Error(cloudflareProblem(status, text));
+      }
+      if (binary) return b64ToBlob(String(data), /jpe?g/.test(type) ? "image/jpeg" : "image/png");
+    } else {
+      let res;
+      try { res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal }); }
+      catch (e) { if (e.name === "AbortError") throw e; throw new Error("Couldn't reach Cloudflare. Check your internet connection."); }
+      status = res.status;
+      if (!res.ok) throw new Error(cloudflareProblem(status, await res.text()));
+      if (binary) return await res.blob();
+      data = await res.json();
+    }
+    const j = typeof data === "string" ? JSON.parse(data) : data;
+    const b64 = j && ((j.result && j.result.image) || j.image);
+    if (!b64) throw new Error("Cloudflare answered without a picture. Try again.");
+    return b64ToBlob(b64, "image/jpeg");
   }
 
   const urls = new Map();
@@ -432,19 +513,30 @@
   // ---------- settings ----------
   function openSettings() {
     $("s-key").value = state.key;
+    $("s-cf-account").value = state.cfAccount;
+    $("s-cf-token").value = state.cfToken;
     $("s-result").textContent = "";
     $("settings").classList.remove("hidden");
     $("s-key").focus();
   }
   async function saveSettings() {
     const key = $("s-key").value.trim();
+    const cfAccount = $("s-cf-account").value.trim(), cfToken = $("s-cf-token").value.trim();
     if (key && !/^(sk|pk)_[A-Za-z0-9_-]{8,}$/.test(key)) { $("s-result").textContent = "That doesn't look like a Pollinations key. It starts with sk_."; return; }
+    if (cfAccount && !/^[0-9a-f]{32}$/i.test(cfAccount)) { $("s-result").textContent = "The Cloudflare account ID is 32 letters and numbers, as shown on your Cloudflare dashboard."; return; }
+    if (Boolean(cfAccount) !== Boolean(cfToken)) { $("s-result").textContent = "For Cloudflare, fill in both the account ID and the token."; return; }
+    const cfAdded = cfAccount && !hasCloudflare();
+    state.cfAccount = cfAccount; state.cfToken = cfToken;
+    localStore("srkstudio.cfAccount", cfAccount || null);
+    localStore("srkstudio.cfToken", cfToken || null);
     state.key = key;
     localStore("srkstudio.key", key || null);
     if (key) await loadPremiumModels();
-    renderModels(); renderNote();
+    renderModels();
+    if (cfAdded) $("model").value = `cf:${CF_MODELS[0].id}`;
+    renderNote();
     $("settings").classList.add("hidden");
-    toast(key ? "Key saved. Premium pictures and video are ready." : "Key removed. Free pictures still work.");
+    toast(cfAdded ? "Cloudflare saved. Free daily pictures are ready." : "Settings saved.");
   }
 
   // ---------- misc ----------
@@ -458,7 +550,7 @@
   function wire() {
     $("tab-image").onclick = () => setMode("image");
     $("tab-video").onclick = () => setMode("video");
-    $("model").onchange = renderDurations;
+    $("model").onchange = () => { renderDurations(); renderNote(); };
     $("btn-create").onclick = create;
     $("btn-cancel").onclick = () => state.busy && state.busy.abort();
     $("btn-settings").onclick = openSettings;
