@@ -89,12 +89,15 @@
     return { images, videos };
   }
 
+  /** Puts the dependable free models first, so the default works even when a newer listed model is down. */
+  const orderFree = (ids) => [...FREE_FALLBACK.filter((id) => ids.includes(id)), ...ids.filter((id) => !FREE_FALLBACK.includes(id))];
+
   async function loadFreeModels() {
     try {
       const r = await fetch(`${FREE_BASE}/models`);
       if (!r.ok) throw new Error(String(r.status));
       const { images } = parseModels(await r.json());
-      if (images.length) state.freeModels = images.map((m) => m.id);
+      if (images.length) state.freeModels = orderFree(images.map((m) => m.id));
     } catch { /* keep the built-in list */ }
   }
   async function loadPremiumModels() {
@@ -236,6 +239,7 @@
   let timer = null;
   function startStage(r, label) {
     $("stage").classList.remove("hidden");
+    $("frame").classList.remove("hidden");
     $("stage-media").innerHTML = "";
     $("develop").classList.remove("hidden");
     $("frame").style.setProperty("--ar", `${r.w} / ${r.h}`);
@@ -280,15 +284,24 @@
         const made = [];
         for (let i = 0; i < count; i++) {
           const seed = randomSeed();
-          let blob, sourceUrl = null;
+          let blob, sourceUrl = null, usedModel = model;
           if (kind === "free") {
             sourceUrl = freeImageUrl(prompt, model, r, seed, enhance);
-            blob = await fetchMedia(sourceUrl, { auth: false, signal: ctrl.signal });
+            try {
+              blob = await fetchMedia(sourceUrl, { auth: false, signal: ctrl.signal });
+            } catch (e) {
+              const backup = FREE_FALLBACK.find((id) => id !== model && state.freeModels.includes(id)) || (model !== "flux" ? "flux" : null);
+              if (e.name === "AbortError" || !backup) throw e;
+              $("stage-status").textContent = `${model} isn't working right now, trying ${backup}…`;
+              sourceUrl = freeImageUrl(prompt, backup, r, seed, enhance);
+              blob = await fetchMedia(sourceUrl, { auth: false, signal: ctrl.signal });
+              usedModel = backup;
+            }
           } else {
             const q = new URLSearchParams({ model, width: r.w, height: r.h, seed });
             blob = await fetchMedia(`${GEN_BASE}/image/${encodeURIComponent(prompt)}?${q}`, { auth: true, signal: ctrl.signal });
           }
-          const item = { id: crypto.randomUUID(), kind: "image", prompt, model, ratio: state.ratio, created: Date.now(), blob, sourceUrl };
+          const item = { id: crypto.randomUUID(), kind: "image", prompt, model: usedModel, ratio: state.ratio, created: Date.now(), blob, sourceUrl };
           await putItem(item);
           made.push(item);
           showOnStage(made);
@@ -298,8 +311,9 @@
       }
       await refreshGallery();
     } catch (e) {
-      if (e.name === "AbortError") { endStage("Cancelled."); $("develop").classList.add("hidden"); }
-      else { endStage(e.message || String(e)); $("develop").classList.add("hidden"); }
+      endStage(e.name === "AbortError" ? "Cancelled." : (e.message || String(e)));
+      $("develop").classList.add("hidden");
+      if (!$("stage-media").children.length) $("frame").classList.add("hidden");
       await refreshGallery();
     } finally {
       state.busy = null;
