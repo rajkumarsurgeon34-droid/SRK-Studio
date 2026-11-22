@@ -4,7 +4,7 @@ Make pictures and short videos from a prompt, on your Android phone. Part of the
 Dr. M. Rajkumar · ShazVerse Technologies.
 
 - **Free daily pictures (Cloudflare):** add your Cloudflare account ID and a token made with the *Workers AI*
-  template in ⚙️ Settings. FLUX.1 Schnell (square) and SDXL Lightning (any shape) run on Cloudflare's free daily
+  template in ⚙️ Settings. FLUX.2 Klein (any shape) and FLUX.1 Schnell (square) run on Cloudflare's free daily
   allowance, which resets at 5:30 AM India time.
 - **A few pictures with no setup:** Pollinations' no-key pictures, limited to a few an hour.
 - **Premium pictures and video:** add your own Pollinations key in ⚙️ Settings (get one at

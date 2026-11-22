@@ -9,8 +9,8 @@
   const CF_BASE = "https://api.cloudflare.com/client/v4/accounts";
   /** Cloudflare Workers AI picture models on the free daily allowance (10,000 neurons, resets 00:00 UTC). */
   const CF_MODELS = [
+    { id: "flux-2-klein-4b", path: "@cf/black-forest-labs/flux-2-klein-4b", label: "FLUX.2 Klein — any shape", squareOnly: false, multipart: true },
     { id: "flux-1-schnell", path: "@cf/black-forest-labs/flux-1-schnell", label: "FLUX.1 Schnell — square only", squareOnly: true },
-    { id: "sdxl-lightning", path: "@cf/bytedance/stable-diffusion-xl-lightning", label: "SDXL Lightning — any shape", squareOnly: false },
   ];
   const $ = (id) => document.getElementById(id);
 
@@ -218,7 +218,7 @@
       const picked = $("model").value;
       const square = picked.startsWith("cf:") && cfModel(picked.slice(3))?.squareOnly;
       note.textContent = state.mode === "video" ? "A video takes one to a few minutes. Keep the app open while it's made."
-        : square && state.ratio !== "1:1" ? "FLUX.1 Schnell makes square pictures. Pick SDXL Lightning for other shapes."
+        : square && state.ratio !== "1:1" ? "FLUX.1 Schnell makes square pictures. Pick FLUX.2 Klein for other shapes."
         : picked.startsWith("free:") && !hasCloudflare() ? "Without a key, Pollinations allows only a few pictures an hour. Add Cloudflare in Settings for many free pictures a day." : "";
       create.textContent = state.mode === "video" ? "Create video" : "Create";
     }
@@ -361,46 +361,46 @@
     if (status === 401 || status === 403 || code === 10000) return "Cloudflare didn't accept your token. In Settings, check the account ID and that the token has Workers AI permission.";
     if (status === 429 || code === 3036 || /neuron|daily|allocation|limit/i.test(detail)) return "Today's free Cloudflare allowance is used up. It resets at 5:30 AM India time.";
     if (status === 404) return "Cloudflare couldn't find that account or model. Check the account ID in Settings.";
+    if (status === 410) return "Cloudflare has retired this model. Update SRK Studio to get its replacement.";
     if (status >= 500) return "Cloudflare is having a problem. Try again in a moment.";
     return `Cloudflare said no (${status})${detail ? ": " + String(detail).slice(0, 140) : "."}`;
   }
-  /** Calls a Workers AI model. Inside the Android app the request goes through the native HTTP layer, because
-   * api.cloudflare.com does not allow requests from a web page (no CORS). */
+  /** Calls a Workers AI picture model. Inside the Android app the request goes through the native HTTP layer,
+   * because api.cloudflare.com does not allow requests from a web page (no CORS). Both models answer JSON with a
+   * base64 picture. FLUX.2 Klein takes multipart form fields (prompt, width/height 256–1920, seed); FLUX.1 Schnell
+   * takes JSON and refuses a seed (400 "Additional or unevaluated properties '/seed'"). */
   async function cloudflareImage(m, prompt, size, seed, signal) {
     const url = `${CF_BASE}/${encodeURIComponent(state.cfAccount)}/ai/run/${m.path}`;
-    // FLUX.1 Schnell's schema refuses a seed (400 "Additional or unevaluated properties '/seed'"); SDXL takes one.
-    const body = m.squareOnly ? { prompt, steps: 4 } : { prompt, width: size.w, height: size.h, seed };
-    const headers = { Authorization: `Bearer ${state.cfToken}`, "Content-Type": "application/json" };
-    const binary = !m.squareOnly; // FLUX answers JSON with a base64 image; SDXL answers with the PNG itself
+    const fields = m.multipart ? { prompt, width: size.w, height: size.h, seed } : { prompt, steps: 4 };
+    const boundary = `----srkstudio${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`;
+    const multipartText = () => Object.entries(fields)
+      .map(([k, v]) => `--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`).join("") + `--${boundary}--\r\n`;
+    const auth = { Authorization: `Bearer ${state.cfToken}` };
     const native = plugins().CapacitorHttp;
     if (signal.aborted) throw aborted();
-    let status, data, type;
+    let data;
     if (native) {
+      const headers = { ...auth, "Content-Type": m.multipart ? `multipart/form-data; boundary=${boundary}` : "application/json" };
       let res;
-      try { res = await native.request({ url, method: "POST", headers, data: body, responseType: binary ? "blob" : "json", connectTimeout: 30000, readTimeout: 120000 }); }
+      try { res = await native.request({ url, method: "POST", headers, data: m.multipart ? multipartText() : fields, responseType: "json", connectTimeout: 30000, readTimeout: 120000 }); }
       catch { throw new Error("Couldn't reach Cloudflare. Check your internet connection."); }
       if (signal.aborted) throw aborted();
-      status = res.status; data = res.data;
-      type = (res.headers && (res.headers["Content-Type"] || res.headers["content-type"])) || "";
-      if (status < 200 || status >= 300) {
-        let text = data;
-        if (binary && typeof data === "string") { try { text = atob(data); } catch { /* leave as is */ } }
-        throw new Error(cloudflareProblem(status, text));
-      }
-      if (binary) return b64ToBlob(String(data), /jpe?g/.test(type) ? "image/jpeg" : "image/png");
+      if (res.status < 200 || res.status >= 300) throw new Error(cloudflareProblem(res.status, res.data));
+      data = res.data;
     } else {
+      let body, headers = auth;
+      if (m.multipart) { body = new FormData(); for (const [k, v] of Object.entries(fields)) body.append(k, String(v)); }
+      else { body = JSON.stringify(fields); headers = { ...auth, "Content-Type": "application/json" }; }
       let res;
-      try { res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal }); }
+      try { res = await fetch(url, { method: "POST", headers, body, signal }); }
       catch (e) { if (e.name === "AbortError") throw e; throw new Error("Couldn't reach Cloudflare. Check your internet connection."); }
-      status = res.status;
-      if (!res.ok) throw new Error(cloudflareProblem(status, await res.text()));
-      if (binary) return await res.blob();
+      if (!res.ok) throw new Error(cloudflareProblem(res.status, await res.text()));
       data = await res.json();
     }
     const j = typeof data === "string" ? JSON.parse(data) : data;
     const b64 = j && ((j.result && j.result.image) || j.image);
     if (!b64) throw new Error("Cloudflare answered without a picture. Try again.");
-    return b64ToBlob(b64, "image/jpeg");
+    return b64ToBlob(b64, /^iVBOR/.test(b64) ? "image/png" : "image/jpeg");
   }
 
   const urls = new Map();
