@@ -368,7 +368,8 @@
    * api.cloudflare.com does not allow requests from a web page (no CORS). */
   async function cloudflareImage(m, prompt, size, seed, signal) {
     const url = `${CF_BASE}/${encodeURIComponent(state.cfAccount)}/ai/run/${m.path}`;
-    const body = m.squareOnly ? { prompt, steps: 4, seed } : { prompt, width: size.w, height: size.h, seed };
+    // FLUX.1 Schnell's schema refuses a seed (400 "Additional or unevaluated properties '/seed'"); SDXL takes one.
+    const body = m.squareOnly ? { prompt, steps: 4 } : { prompt, width: size.w, height: size.h, seed };
     const headers = { Authorization: `Bearer ${state.cfToken}`, "Content-Type": "application/json" };
     const binary = !m.squareOnly; // FLUX answers JSON with a base64 image; SDXL answers with the PNG itself
     const native = plugins().CapacitorHttp;
